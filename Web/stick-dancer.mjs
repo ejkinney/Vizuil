@@ -1,5 +1,6 @@
 import { BeatClock } from './beat-clock.mjs';
 import { blendPoses, jerseyClubPose, JERSEY_MOVE_COUNT } from './jersey-club.mjs';
+import { aimLimb, bodyAt, floorOf, limbPoints } from './stick-figure-rig.mjs';
 
 const PALETTES = [
   { backdrop: '#29096f', spotlight: '#6418c4', ink: '#dcff38' },
@@ -92,16 +93,16 @@ export class StickDance {
     const stepTime = dt / steps;
     for (const limb of this.limbs) {
       const { reach, bend, leg } = limb;
-      if (!sameSource || !signal) limb.timeLeft = 0;
+      if (!sameSource || !signal || dancing) limb.timeLeft = 0;
       limb.timeLeft = Math.max(0, limb.timeLeft - dt);
 
-      // A rising band can trigger even when another band in the same range is already loud.
-      for (let i = limb.from; limb.timeLeft === 0 && i < limb.to; i++) {
+      // Before tempo locks, rising bands add a small accent. The timed dance stays repeatable.
+      for (let i = limb.from; !dancing && limb.timeLeft === 0 && i < limb.to; i++) {
         const strength = bands[i] ?? 0;
         if (strength < threshold || strength - (previous[i] ?? 0) < 0.11) continue;
-        reach.target = leg ? mix(-0.95, 1.75, this.random()) : mix(-0.90, 2.75, this.random());
-        bend.target = leg ? mix(-1.65, -0.15, this.random()) : mix(-1.65, 1.60, this.random());
-        limb.timeLeft = mix(0.13, 0.24, this.random());
+        reach.target = leg ? mix(-0.12, 0.85, this.random()) : mix(0.18, 1.05, this.random());
+        bend.target = leg ? mix(-0.72, -0.17, this.random()) : mix(-0.70, 0.04, this.random());
+        limb.timeLeft = mix(0.18, 0.30, this.random());
       }
       if (limb.timeLeft === 0) {
         reach.target = reach.rest;
@@ -114,10 +115,6 @@ export class StickDance {
     }
     this.previousBands = bands;
   }
-}
-
-function endOf(start, length, angle) {
-  return [start[0] + length * Math.sin(angle), start[1] + length * Math.cos(angle)];
 }
 
 function line(ctx, ...points) {
@@ -169,38 +166,6 @@ function drawStage(ctx, width, height, x, y, unit, { backdrop, spotlight, ink })
   ctx.restore();
 }
 
-const LEG_LENGTHS = [0.65, 0.62];
-const ARM_LENGTHS = [0.58, 0.54];
-
-function bodyAt([hipX, hipY], lean) {
-  const cos = Math.cos(lean), sin = Math.sin(lean);
-  return (x, y) => [hipX + x * cos - y * sin, hipY + x * sin + y * cos];
-}
-
-function limbStart(body, { side, leg }) {
-  return leg ? body(side * 0.12, 0) : body(side * 0.25, -0.94);
-}
-
-function limbPoints(body, limb, { angle, lower, pitch }, lean) {
-  const { side, leg } = limb;
-  const start = limbStart(body, limb);
-  const [upperLength, lowerLength] = leg ? LEG_LENGTHS : ARM_LENGTHS;
-  if (!leg) {
-    // Fold raised elbows down and keep clearance from both the shoulder and the leaning torso.
-    const outward = Math.asin(Math.sin(side * angle));
-    const tilt = side * lean;
-    angle = side * clamp(outward, Math.max(0.32, 0.38 - tilt), Math.min(1.24, 1.30 - tilt));
-  }
-  const middle = endOf(start, upperLength, angle);
-  const tip = endOf(middle, lowerLength, lower);
-  const toe = leg ? [tip[0] + side * 0.22 * Math.cos(pitch), tip[1] + 0.22 * Math.sin(pitch)] : tip;
-  return { start, middle, tip, toe, leg };
-}
-
-function floorOf(legs) {
-  return Math.max(...legs.flatMap(({ tip, toe }) => [tip[1], toe[1]]));
-}
-
 function looseRig(dance) {
   const [leftLeg, rightLeg, leftArm, rightArm] = dance.limbs;
   const stride = rightLeg.reach.angle - leftLeg.reach.angle;
@@ -217,18 +182,6 @@ function looseRig(dance) {
   const floor = floorOf(dance.limbs.slice(0, 2).map((limb, i) => limbPoints(body, limb, joints[i], lean)));
   const hop = Math.max(0, 0.85 - floor) * 0.27;
   return { hip: [hipX, -floor - hop - 0.038], lean, joints };
-}
-
-// Aim two fixed-length segments at the ankle or wrist while keeping the knee or elbow bent outward.
-function aimLimb(body, limb, target, pitch = 0) {
-  const [x, y] = limbStart(body, limb);
-  const dx = target[0] - x, dy = target[1] - y;
-  const [upper, lower] = limb.leg ? LEG_LENGTHS : ARM_LENGTHS;
-  const distance = clamp(Math.hypot(dx, dy), Math.abs(upper - lower) + 0.001, upper + lower - 0.001);
-  const fromTarget = Math.acos((upper ** 2 + distance ** 2 - lower ** 2) / (2 * upper * distance));
-  const bend = Math.PI - Math.acos((upper ** 2 + lower ** 2 - distance ** 2) / (2 * upper * lower));
-  const angle = Math.atan2(dx, dy) + limb.side * fromTarget;
-  return { angle, lower: angle - limb.side * bend, pitch };
 }
 
 function jerseyRig(dance) {

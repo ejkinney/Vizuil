@@ -1,7 +1,19 @@
+import { beatStackStep } from './jersey-club.mjs';
+import { aimLimb, bodyAt, floorOf, limbPoints } from './stick-figure-rig.mjs';
+
 const BODY = '#f8eddc';
 const FAR_LIMB = '#ae9bb6';
-const FLOOR = 235;
-const STEP_POSITIONS = [[128, 188], [103, 188], [103, 213], [128, 213]];
+const LEGS = [-1, 1].map(side => ({ side, leg: true }));
+const ARMS = [-1, 1].map(side => ({ side, leg: false }));
+const PLANTED_FEET = [[-0.27, -0.05, 0], [0.27, -0.05, 0]];
+const mix = (from, to, amount) => from + (to - from) * amount;
+const smooth = amount => amount * amount * (3 - 2 * amount);
+
+function pose(hip, lean, feet, hands) {
+  return { hip, lean, feet, hands };
+}
+
+const rest = pose([0, -1.08], 0, [[-0.43, -0.05, -0.12], [0.43, -0.05, -0.12]], [[-0.56, -0.29], [0.56, -0.29]]);
 
 function limb(ctx, points, color, width) {
   ctx.beginPath();
@@ -19,23 +31,25 @@ function circle(ctx, x, y, radius, color) {
   ctx.fill();
 }
 
-export function drawPlayer(ctx, x, y, width, { tempo, beat, phase, bounce, shift, dropping, motion }) {
-  const pace = Math.max(0, Math.min(1, ((tempo ?? 65) - 65) / 115));
-  // The same four-count step continues under every gesture, including beats without a game move.
-  const from = STEP_POSITIONS[beat ? (beat - 1) % STEP_POSITIONS.length : 0];
-  const to = STEP_POSITIONS[beat % STEP_POSITIONS.length];
-  const weight = beat ? Math.cos(Math.PI * phase) : 0;
-  const rock = beat % 2 === 1 ? weight : -weight;
-  const stride = (1 - weight) / 2;
-  const lift = beat ? Math.sin(Math.PI * phase) : 0;
-  const accent = motion < 1 ? Math.sin(Math.PI * Math.sqrt(motion)) : 0;
-  const push = shift * accent;
-  const throwDown = dropping ? accent : 0;
-
-  const hip = [156 + 11 * rock + 10 * push, 138 + 7 * pace + 5 * bounce + 8 * throwDown];
-  const lean = 14 * pace + 17 * rock + 51 * push;
-  const shoulder = [hip[0] + lean * 0.65, hip[1] - 62 + 10 * Math.abs(push)];
-  const head = [hip[0] + lean, shoulder[1] - 34 + 5 * throwDown];
+export function drawPlayer(ctx, x, y, width, { beat, phase, bounce, shift, dropping, turnSide, actionPhase }) {
+  const step = beat ? beatStackStep(beat - 1 + phase) : rest;
+  // Hit the cue near the start of the move and hold it through the piece animation.
+  const attack = smooth(Math.min(1, actionPhase / 0.10));
+  const release = smooth(Math.max(0, 1 - Math.max(0, actionPhase - 0.34) / 0.28));
+  const accent = attack * release;
+  const beatPosition = beat ? beat - 1 + phase : 0;
+  const hip = [
+    (beat ? Math.cos(Math.PI * beatPosition) * 0.22 : 0) + shift * accent * 0.14,
+    -1.08 + bounce * 0.035 + (dropping ? accent * 0.13 : 0),
+  ];
+  const lean = step.lean + shift * accent * 0.25;
+  const body = bodyAt(hip, lean);
+  const legs = LEGS.map((leg, index) => {
+    const [ankleX, ankleY, pitch] = PLANTED_FEET[index];
+    const ground = -0.05 - Math.max(0, 0.22 * Math.sin(pitch));
+    const joint = aimLimb(body, leg, [ankleX, Math.min(ankleY, ground)], pitch);
+    return limbPoints(body, leg, joint);
+  });
 
   ctx.save();
   ctx.translate(x, y);
@@ -52,22 +66,43 @@ export function drawPlayer(ctx, x, y, width, { tempo, beat, phase, bounce, shift
   ctx.stroke();
   limb(ctx, [[35, 244], [285, 244]], '#776387', 1);
 
-  for (const [index, side, color] of [[0, -1, FAR_LIMB], [1, 1, BODY]]) {
-    const step = from[index] === to[index] ? 0 : lift;
-    const footX = from[index] + (to[index] - from[index]) * stride;
-    const footY = FLOOR - step * (26 + pace * 8);
-    const knee = [(hip[0] + footX) / 2 + side * (14 + 9 * step), (hip[1] + footY) / 2 - 6 * step];
-    limb(ctx, [hip, knee, [footX, footY], [footX + side * 17, footY + step * 3]], color, 12);
-  }
+  ctx.translate(156, 241);
+  ctx.scale(66, 66);
+  const floor = floorOf(legs);
+  ctx.beginPath();
+  ctx.ellipse(hip[0], 0.02, 0.56 + Math.min(0, floor) * 0.52, 0.065, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#18112199';
+  ctx.fill();
+  ctx.translate(0, Math.min(0, -floor - 0.05));
 
-  limb(ctx, [hip, shoulder, [head[0], head[1] + 17]], BODY, 17);
-  for (const [side, color] of [[-1, FAR_LIMB], [1, BODY]]) {
-    const reach = Math.max(0, push * side);
-    const elbow = [shoulder[0] + side * (33 + 10 * reach), shoulder[1] + 29 + 18 * throwDown];
-    const hand = [shoulder[0] + side * (50 + 16 * throwDown + 17 * reach),
-      shoulder[1] + 6 + 14 * side * rock + 83 * throwDown - 11 * reach];
-    limb(ctx, [[shoulder[0] + side * 5, shoulder[1] + 3], elbow, hand], color, 11);
+  for (const [index, { start, middle, tip, toe }] of legs.entries()) {
+    limb(ctx, [start, middle, tip, toe], index ? BODY : FAR_LIMB, 0.125);
   }
-  circle(ctx, ...head, 24, BODY);
+  limb(ctx, [legs[0].start, legs[1].start], BODY, 0.14);
+  limb(ctx, [body(0, 0), body(0, -1.09)], BODY, 0.17);
+  limb(ctx, [body(-0.25, -0.94), body(0.25, -0.94)], BODY, 0.13);
+
+  for (const [index, arm] of ARMS.entries()) {
+    const { side } = arm;
+    const cue = turnSide === side ? 'turn' : dropping ? 'drop' : shift === side ? 'shift' : null;
+    const reach = cue ? accent : 0;
+    const restArm = limbPoints(body, arm, aimLimb(body, arm, body(...step.hands[index])));
+    // Keep the upper arm alongside the torso; the forearm carries each cue.
+    const elbow = body(side * 0.40, -0.53);
+    const wrist = body(...(cue === 'turn' ? [side * 0.60, -1.27] :
+      cue === 'drop' ? [side * 0.52, 0.08] : [side * 1.05, -0.62]));
+    const middle = restArm.middle.map((value, i) => mix(value, elbow[i], reach));
+    const tip = restArm.tip.map((value, i) => mix(value, wrist[i], reach));
+    const { start } = restArm;
+    const color = index ? BODY : FAR_LIMB;
+    limb(ctx, [start, middle, tip], color, 0.115);
+    if (reach > 0) {
+      const finger = cue === 'turn' ? [tip[0] + side * 0.07 * reach, tip[1] - 0.18 * reach] :
+        cue === 'drop' ? [tip[0], tip[1] + 0.18 * reach] :
+        [tip[0] + side * 0.18 * reach, tip[1]];
+      limb(ctx, [tip, finger], color, 0.065);
+    }
+  }
+  circle(ctx, ...body(0, -1.35), 0.346, BODY);
   ctx.restore();
 }

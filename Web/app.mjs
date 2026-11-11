@@ -1,4 +1,6 @@
 import { scenes } from './scenes.mjs';
+import { scenePreviews } from './scene-previews.mjs';
+import { SceneShuffle } from './scene-shuffle.mjs';
 
 const $ = id => document.getElementById(id);
 const hosted = document.body.dataset.mode === 'site';
@@ -12,27 +14,79 @@ if (!hosted && /^[a-f0-9]{36}$/.test(suppliedKey ?? '')) {
 const key = hosted ? null : sessionStorage.getItem('vizuil-key');
 let canvas = $('scene');
 const dialog = $('share-dialog');
+const welcomeDialog = $('welcome-dialog');
+const anyDialogOpen = () => dialog.open || welcomeDialog.open;
 const chrome = document.querySelectorAll('.chrome');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const spectrumCanvas = $('spectrum');
 const spectrumContext = spectrumCanvas.getContext('2d');
 const densityInput = $('density');
-const captureInput = $('capture-source');
+const outputInput = $('audio-output');
+const doubleTimeButton = $('double-time');
+const kickButton = $('kick');
+const sceneToggle = $('scene-toggle');
+const sceneMenu = $('scene-menu');
+const sceneGrid = $('scene-grid');
+const shuffleButton = $('shuffle-toggle');
+const shuffleBars = $('shuffle-bars');
+const shuffle = new SceneShuffle();
 const statusText = {
-  live: hosted ? 'Listening' : 'Desktop audio', quiet: 'Waiting for audio', demo: 'Silent demo',
+  live: hosted ? 'Listening' : 'Desktop audio', quiet: 'Waiting for audio', demo: hosted ? 'Playing demo' : 'Silent demo',
   connecting: 'Opening audio', unavailable: 'Audio unavailable', off: 'Ready',
 };
 let currentFrame = null;
+let detectedTempo = null;
+let doubleTime = false;
 let lastFrameAt = -Infinity;
 let sleepTimer;
 let sleeping = false;
 let presentation = 0;
 let pendingSource = false;
+let selectedOutput = '';
+let loadedOutputs = false;
+let refreshingOutputs = false;
 let editingDensity = false;
 let activeShare = null;
 let scene, sceneId;
 let siteAudio;
 let siteDensity = 0.65;
+let shuffleEnabled = false;
+let shufflePending = false;
+
+for (const [id, entry] of scenes) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'scene-card';
+  button.dataset.scene = id;
+  button.title = entry.description;
+  button.setAttribute('aria-label', `${entry.name}, ${entry.area}`);
+  button.innerHTML = `<span class="scene-preview">${scenePreviews[id]}</span><span class="scene-card-copy"><strong>${entry.name}</strong><small>${entry.area}</small></span>`;
+  button.addEventListener('click', () => {
+    shuffle.reset();
+    void chooseScene(id);
+    closeSceneMenu();
+  });
+  sceneGrid.append(button);
+}
+
+function closeSceneMenu() {
+  if (sceneMenu.hidden) return;
+  sceneMenu.hidden = true;
+  sceneToggle.setAttribute('aria-expanded', 'false');
+  sceneToggle.focus({ preventScroll: true });
+  scheduleSleep();
+}
+
+async function chooseScene(id) {
+  if (!scenes.has(id) || sceneId === id) return;
+  if (hosted) {
+    showScene(id);
+    if (currentFrame) currentFrame.scene = sceneId;
+    return;
+  }
+  try { await api('scene', 'POST', { scene: id }); }
+  catch (error) { showError($('error'), error.message); }
+}
 
 function showScene(id) {
   const entry = scenes.get(id);
@@ -48,25 +102,37 @@ function showScene(id) {
   canvas.setAttribute('aria-label', entry.description);
   document.title = `Vizuil · ${entry.area}`;
   setText($('scene-area'), `${entry.number} / ${entry.area}`);
-  setText($('scene-number'), `VISUAL ${entry.number}`);
-  setText($('scene-name'), entry.name);
+  setText($('current-scene-name'), entry.name);
+  $('scene-chooser-icon').innerHTML = scenePreviews[id];
+  for (const button of sceneGrid.children) {
+    const active = button.dataset.scene === id;
+    button.setAttribute('aria-pressed', String(active));
+  }
   scene = entry.create(canvas, { onPlay: sleep });
   scene.resize(canvas.clientWidth, canvas.clientHeight);
-  $('picker').value = id;
-  if (canvas.tabIndex >= 0 && document.activeElement === $('picker')) canvas.focus({ preventScroll: true });
 }
 
-for (const [id, entry] of scenes) $('picker').add(new Option(entry.name, id));
 showScene(scenes.keys().next().value);
-$('picker').addEventListener('change', async event => {
-  if (hosted) {
-    showScene(event.target.value);
-    currentFrame.scene = sceneId;
-    return;
-  }
-  try { await api('scene', 'POST', { scene: event.target.value }); }
-  catch (error) { $('picker').value = sceneId; showError($('error'), error.message); }
+sceneToggle.addEventListener('click', () => {
+  sceneMenu.hidden = !sceneMenu.hidden;
+  sceneToggle.setAttribute('aria-expanded', String(!sceneMenu.hidden));
+  if (!sceneMenu.hidden) {
+    clearTimeout(sleepTimer);
+    sceneGrid.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  } else scheduleSleep();
 });
+$('close-scenes').addEventListener('click', closeSceneMenu);
+document.addEventListener('pointerdown', event => {
+  if (!sceneMenu.hidden && !sceneMenu.contains(event.target) && !sceneToggle.contains(event.target)) closeSceneMenu();
+});
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSceneMenu(); });
+shuffleButton.addEventListener('click', () => {
+  shuffleEnabled = !shuffleEnabled;
+  shuffle.reset();
+  shuffleButton.setAttribute('aria-pressed', String(shuffleEnabled));
+  setText($('shuffle-state'), shuffleEnabled ? 'On' : 'Off');
+});
+shuffleBars.addEventListener('change', () => shuffle.setBars(Number(shuffleBars.value)));
 new ResizeObserver(() => scene.resize(canvas.clientWidth, canvas.clientHeight)).observe($('stage'));
 const paintInterval = 1000 / 60;
 let previousTime, nextPaint = 0;
@@ -82,6 +148,15 @@ function draw(now) {
     presentation = reducedMotion.matches ? target : sleeping
       ? Math.min(target, presentation + step) : Math.max(target, presentation - step);
     const eased = presentation * presentation * (3 - 2 * presentation);
+    if (hosted && currentFrame?.status === 'demo') {
+      currentFrame.beatPosition = siteAudio.demoBeatPosition() * (doubleTime ? 2 : 1);
+    }
+    if (!viewer && shuffleEnabled && !shufflePending && shuffle.advance(dt, currentFrame)) {
+      const choices = [...scenes.keys()].filter(id => id !== sceneId);
+      const next = choices[Math.floor(Math.random() * choices.length)];
+      shufflePending = true;
+      void chooseScene(next).finally(() => { shufflePending = false; });
+    }
     scene.render(dt, currentFrame, eased);
   }
   requestAnimationFrame(draw);
@@ -103,9 +178,9 @@ function wake() {
 
 function scheduleSleep() {
   clearTimeout(sleepTimer);
-  if (sleeping || dialog.open || (hosted && pendingSource)) return;
+  if (sleeping || anyDialogOpen() || !sceneMenu.hidden || (hosted && pendingSource)) return;
   sleepTimer = setTimeout(() => {
-    if (dialog.open || document.activeElement?.matches('.chrome :focus-visible') || densityInput.matches(':active')) return;
+    if (anyDialogOpen() || !sceneMenu.hidden || document.activeElement?.matches('.chrome :focus-visible') || densityInput.matches(':active')) return;
     setSleeping(true);
   }, 3000);
 }
@@ -119,7 +194,7 @@ function sleep() {
 if (document.hasFocus()) scheduleSleep();
 else { sleep(); presentation = 1; }
 window.addEventListener('blur', sleep);
-window.addEventListener('focus', () => { if (dialog.open) wake(); });
+window.addEventListener('focus', () => { if (anyDialogOpen()) wake(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) sleep(); });
 document.addEventListener('focusout', scheduleSleep);
 function wakeOnPointer(event) {
@@ -132,8 +207,14 @@ window.addEventListener('pointercancel', scheduleSleep, { passive: true });
 window.addEventListener('keydown', event => {
   if (event.defaultPrevented) return;
   wake();
-  if (!dialog.open && !event.repeat && event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey &&
-      !event.target.matches?.('input, select, textarea')) toggleFullscreen();
+  if (anyDialogOpen() || event.repeat || event.ctrlKey || event.metaKey || event.altKey ||
+      event.target.closest?.('input, select, textarea, [contenteditable]')) return;
+  const shortcut = event.key.toLowerCase();
+  if (shortcut === 'f') toggleFullscreen();
+  if (shortcut === 'k' && !kickButton.disabled) {
+    event.preventDefault();
+    kickButton.click();
+  }
 });
 
 const fullscreen = $('fullscreen');
@@ -174,19 +255,27 @@ function message(text) {
 }
 function showError(element, text) { setText(element, text); element.hidden = text.length === 0; }
 
+function updateTempo() {
+  const bpm = detectedTempo === null ? null : detectedTempo * (doubleTime ? 2 : 1);
+  if (currentFrame) currentFrame.spectrum.bpm = bpm;
+  doubleTimeButton.setAttribute('aria-pressed', String(doubleTime));
+  setText($('tempo'), bpm === null ? '—' : String(Math.round(bpm)));
+}
+
 function updateSourceButtons(source) {
   const ready = Boolean((hosted || key) && currentFrame);
   const listen = $('listen');
-  listen.disabled = !ready || pendingSource || (hosted && !siteAudio?.canCapture);
-  if (hosted) {
-    captureInput.disabled = listen.disabled;
-    setText(listen, source === 'live' ? 'Change Source' : 'Start Listening');
-  } else listen.setAttribute('aria-pressed', String(source === 'live'));
+  listen.disabled = !ready || pendingSource || (hosted && (!siteAudio?.canCapture || source === 'live'));
+  listen.setAttribute('aria-pressed', String(source === 'live'));
+  outputInput.disabled = !ready || pendingSource || !loadedOutputs;
   $('demo').disabled = !ready || pendingSource;
   $('stop').disabled = !ready || pendingSource || source === 'off';
+  doubleTimeButton.disabled = !ready;
+  kickButton.disabled = !ready || pendingSource || !['live', 'quiet', 'demo'].includes(currentFrame?.status);
   $('share').disabled = !key || !currentFrame;
   densityInput.disabled = !ready;
-  $('picker').disabled = !ready;
+  sceneToggle.disabled = !ready;
+  shuffleButton.disabled = !ready;
   $('demo').setAttribute('aria-pressed', String(source === 'demo'));
 }
 
@@ -194,17 +283,19 @@ function receive(frame) {
   const oldGeneration = currentFrame?.generation;
   lastFrameAt = performance.now();
   currentFrame = frame;
+  detectedTempo = frame.spectrum.bpm;
+  if (!hosted) doubleTime = frame.doubleTime === true;
   showScene(frame.scene);
   setText($('status'), statusText[frame.status] ?? 'Connected');
   $('dot').classList.toggle('active', frame.status === 'live' || frame.status === 'demo');
-  setText($('tempo'), frame.spectrum.bpm === null ? '—' : String(Math.round(frame.spectrum.bpm)));
+  updateTempo();
   if (viewer) {
     message(frame.source === 'off' ? 'Connected. Start listening on the PC.' :
       frame.status === 'unavailable' ? 'The PC’s audio output is unavailable.' : '');
   } else {
     updateSourceButtons(frame.source);
     setText($('device'), frame.device ?? (frame.source === 'demo' ? 'Built-in audio test · silent' :
-      hosted ? 'Browser audio' : frame.status === 'unavailable' ? 'Checking for a Windows output device…' : 'Windows playback'));
+      hosted ? 'System audio' : frame.status === 'unavailable' ? 'Check the selected playback device' : 'Windows playback'));
     if (frame.generation !== oldGeneration) spectrumContext.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
     drawSpectrum(frame.spectrum.bands);
     if (!editingDensity) {
@@ -216,8 +307,9 @@ function receive(frame) {
 
 function disconnected() {
   currentFrame = null;
+  detectedTempo = null;
   setText($('status'), 'Disconnected');
-  setText($('tempo'), '—');
+  updateTempo();
   $('dot').classList.remove('active');
   updateSourceButtons('off');
   if (viewer) message('Waiting for the PC. If sharing ended, scan a new code.');
@@ -226,35 +318,33 @@ function disconnected() {
 
 if (hosted) {
   $('share').hidden = true;
-  $('capture-picker').hidden = false;
   $('capture-help').hidden = false;
-  const { captureSources, createSiteAudio } = await import('./site-audio.mjs');
+  setText($('listen'), 'Share System Audio');
+  const { createSiteAudio } = await import('./site-audio.mjs');
   siteAudio = createSiteAudio(frame => receive({ ...frame, scene: sceneId, density: siteDensity }),
     text => showError($('error'), text));
   const open = $('open-listening');
   open.href = location.href;
-  for (const [id, choice] of Object.entries(captureSources)) captureInput.add(new Option(choice.name, id));
-  function updateCaptureHelp() {
-    const choice = captureSources[captureInput.value];
-    const entireScreen = captureInput.value === 'monitor';
-    const instructions = entireScreen
-      ? `${choice.instructions} If Entire Screen is missing, use a regular Chrome or Edge window.`
-      : choice.instructions;
-    setText($('capture-instructions'), siteAudio.canCapture
-      ? instructions : 'Open Vizuil in desktop Chrome or Edge to share audio.');
-    open.hidden = window.top === window && siteAudio.canCapture;
-  }
-  captureInput.addEventListener('change', () => {
-    updateCaptureHelp();
-    showError($('error'), '');
-  });
-  updateCaptureHelp();
+  setText($('capture-instructions'), siteAudio.canCapture
+    ? 'Choose Entire Screen and turn on system audio in the browser picker. Use Vizuil for Windows to pick a specific playback device.'
+    : 'Open Vizuil in desktop Chrome or Edge to share system audio. Use Vizuil for Windows to pick a specific playback device.');
+  open.hidden = window.top === window && siteAudio.canCapture;
   await siteAudio.select('off');
+  if (!welcomeSeen()) {
+    welcomeDialog.showModal();
+    wake();
+  }
 } else if (viewer || key) {
   const connection = new EventSource(viewer ? `${location.pathname}/frames` : `/api/frames?key=${key}`);
   connection.addEventListener('message', event => receive(JSON.parse(event.data)));
   connection.addEventListener('error', disconnected);
   connection.addEventListener('open', () => showError($('error'), ''));
+  if (!viewer) {
+    $('output-picker').hidden = false;
+    connection.addEventListener('open', refreshOutputs);
+    window.addEventListener('focus', refreshOutputs);
+    setInterval(() => { if (!document.hidden && currentFrame) void refreshOutputs(); }, 3000);
+  }
 } else {
   setText($('status'), 'Launcher needed');
   showError($('error'), 'Open Vizuil from its Windows system tray icon.');
@@ -273,25 +363,79 @@ async function api(path, method = 'GET', body) {
   return text ? JSON.parse(text) : null;
 }
 
+async function refreshOutputs() {
+  if (refreshingOutputs || pendingSource) return;
+  refreshingOutputs = true;
+  try {
+    const { outputs, selectedOutputId } = await api('outputs');
+    if (pendingSource) return;
+    if (!loadedOutputs) selectedOutput = selectedOutputId ?? '';
+    const choices = [{ id: '', name: 'Windows default' }, ...outputs];
+    if (!choices.some(output => output.id === selectedOutput)) {
+      const name = outputInput.selectedOptions[0]?.dataset.deviceName;
+      choices.push({ id: selectedOutput, name: name ?? 'Selected output', disconnected: true });
+    }
+    if (choices.length !== outputInput.length || choices.some(({ id, name, disconnected }, i) =>
+      outputInput[i].value !== id || outputInput[i].dataset.deviceName !== name || outputInput[i].disabled !== Boolean(disconnected))) {
+      outputInput.replaceChildren(...choices.map(({ id, name, disconnected }) => {
+        const option = new Option(disconnected ? `${name} (disconnected)` : name, id);
+        option.dataset.deviceName = name;
+        option.disabled = Boolean(disconnected);
+        return option;
+      }));
+    }
+    outputInput.value = selectedOutput;
+    loadedOutputs = true;
+    updateSourceButtons(currentFrame?.source);
+  } catch {
+    // Keep the last device list while Windows is unavailable and retry on the next refresh.
+  } finally {
+    refreshingOutputs = false;
+  }
+}
+
+outputInput.addEventListener('change', async () => {
+  const previous = selectedOutput;
+  selectedOutput = outputInput.value;
+  showError($('error'), '');
+  if (currentFrame?.source === 'live' && !await selectSource('live')) {
+    outputInput.value = selectedOutput = previous;
+  }
+});
+
 async function selectSource(source) {
   pendingSource = true;
   if (hosted) scheduleSleep();
   updateSourceButtons(currentFrame?.source);
   showError($('error'), '');
   try {
-    if (hosted) await siteAudio.select(source, captureInput.value);
-    else await api('source', 'POST', { source });
+    if (source === 'kick') {
+      if (hosted) siteAudio.kick();
+      else await api('kick', 'POST');
+    } else if (hosted) await siteAudio.select(source);
+    else await api('source', 'POST', { source, deviceId: source === 'live' ? selectedOutput || null : null });
+    return true;
   }
-  catch (error) { showError($('error'), error.message); }
+  catch (error) { showError($('error'), error.message); return false; }
   finally {
     pendingSource = false;
     updateSourceButtons(currentFrame?.source);
     if (hosted) wake();
   }
 }
-for (const [button, source] of [['listen', 'live'], ['demo', 'demo'], ['stop', 'off']]) {
+for (const [button, source] of [['listen', 'live'], ['demo', 'demo'], ['stop', 'off'], ['kick', 'kick']]) {
   $(button).addEventListener('click', () => selectSource(source));
 }
+
+doubleTimeButton.addEventListener('click', async () => {
+  if (hosted) {
+    doubleTime = !doubleTime;
+    updateTempo();
+  } else {
+    try { await api('double-time', 'POST', { enabled: !doubleTime }); }
+    catch (error) { showError($('error'), error.message); }
+  }
+});
 
 densityInput.addEventListener('input', () => {
   editingDensity = true;
@@ -338,6 +482,26 @@ $('share').addEventListener('click', async () => {
 });
 $('close-share').addEventListener('click', () => dialog.close());
 dialog.addEventListener('close', wake);
+$('welcome-close').addEventListener('click', () => welcomeDialog.close());
+$('welcome-explore').addEventListener('click', () => welcomeDialog.close());
+welcomeDialog.addEventListener('close', () => {
+  try { localStorage.setItem('vizuil-welcome-seen', '1'); } catch {}
+  wake();
+});
+$('welcome-demo').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const label = $('welcome-demo-label');
+  button.disabled = true;
+  showError($('welcome-error'), '');
+  setText(label, 'Starting demo…');
+  if (await selectSource('demo')) {
+    welcomeDialog.close();
+  } else {
+    setText(label, 'Play looping demo');
+    button.disabled = false;
+    showError($('welcome-error'), $('error').textContent || 'The demo could not start. Please try again.');
+  }
+});
 startShare.addEventListener('click', async () => {
   startShare.disabled = true;
   showError($('share-error'), '');
@@ -360,4 +524,9 @@ $('copy-link').addEventListener('click', async () => {
   }
   setText($('copy-link'), 'Copied');
 });
+
+function welcomeSeen() {
+  try { return localStorage.getItem('vizuil-welcome-seen') === '1'; }
+  catch { return false; }
+}
 if (!viewer && key) api('share').then(displayShare).catch(() => {});

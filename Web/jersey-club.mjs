@@ -6,6 +6,15 @@ function pose(hip, lean, feet, hands) {
   return { hip, lean, feet, hands };
 }
 
+// The heel-toe crossover from Beat Stack leads the Stick Dancer loop.
+const beatStackFootwork = [
+  [0, pose([-0.34, -1.02], -0.16, [[-0.73, -0.04, -0.20], [0.29, -0.20, 1.38]], [[-0.69, -0.05], [0.69, -0.05]])],
+  [0.18, pose([-0.26, -0.94], 0.15, [[-0.59, -0.20, 1.70], [0.13, -0.07, -0.82]], [[-0.72, -0.02], [0.67, -0.08]])],
+  [0.36, pose([0.05, -1.07], 0.24, [[0.51, -0.48, -0.96], [0.04, -0.06, -0.18]], [[-0.67, -0.08], [0.72, -0.02]])],
+  [0.54, pose([0.29, -0.98], -0.11, [[-0.46, -0.04, -0.12], [0.78, -0.08, 0.24]], [[-0.70, -0.04], [0.69, -0.06]])],
+  [0.76, pose([0.27, -1.14], -0.21, [[-0.19, -0.51, 0.56], [0.55, -0.16, -0.65]], [[-0.68, -0.07], [0.71, -0.02]])],
+];
+
 // Each move is written for one beat. Its mirrored beat finishes the step.
 const runningMan = [
   [0, pose([0.04, -1.00], -0.15, [[0.29, -0.09, 0.27], [-0.37, -0.04, -0.30]], [[-0.42, -0.85], [0.46, -0.39]])],
@@ -45,16 +54,23 @@ export function blendPoses(a, b, t) {
   };
 }
 
-const moves = [runningMan, jerseySlide, rockYoHips].map(frames => [...frames, [1, mirror(frames[0][1])]]);
+export function mirrorStep(frames) {
+  const loop = [...frames, [1, mirror(frames[0][1])]];
+  return beat => {
+    const phase = beat % 1;
+    const next = loop.findIndex(([at]) => at > phase);
+    const [start, from] = loop[next - 1];
+    const [end, to] = loop[next];
+    const t = (phase - start) / (end - start);
+    const shape = blendPoses(from, to, t * t * (3 - 2 * t));
+    return Math.floor(beat) % 2 ? mirror(shape) : shape;
+  };
+}
+
+export const beatStackStep = mirrorStep(beatStackFootwork);
+const moves = [beatStackFootwork, runningMan, jerseySlide, rockYoHips].map(mirrorStep);
 export const JERSEY_MOVE_COUNT = moves.length;
 
 export function jerseyClubPose(move, beat) {
-  const frames = moves[move];
-  const phase = beat % 1;
-  const next = frames.findIndex(([at]) => at > phase);
-  const [start, from] = frames[next - 1];
-  const [end, to] = frames[next];
-  const t = (phase - start) / (end - start);
-  const shape = blendPoses(from, to, t * t * (3 - 2 * t));
-  return Math.floor(beat) % 2 ? mirror(shape) : shape;
+  return moves[move](beat);
 }

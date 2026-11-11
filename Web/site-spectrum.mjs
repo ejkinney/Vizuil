@@ -50,14 +50,15 @@ export class Spectrum {
   smoothEnergy = [0, 0, 0];
   hits = [0, 0, 0];
   nextHit = [0, 0, 0];
-  tempo = new Tempo();
   cursor = 0;
   tick = 0;
   quietTicks = 0;
   level = 0;
   squared = 0;
 
-  constructor(sampleRate) {
+  constructor(sampleRate, bpm = null) {
+    this.fixedBpm = bpm;
+    this.tempo = bpm === null ? new Tempo() : null;
     this.bins = Array.from({ length: bandCount }, (_, i) => {
       const edge = index => Math.ceil(40 * 400 ** (index / bandCount) * fftSize / sampleRate);
       const start = edge(i);
@@ -113,9 +114,10 @@ export class Spectrum {
       this.tempoBaseline[i] += 0.025 * (onset - this.tempoBaseline[i]);
       tempoFlux[i] = onset / (0.035 + 2 * this.tempoBaseline[i] + onset);
     }
-    this.tempo.add(tempoFlux[0], tempoFlux[1], tempoFlux[2], this.quietTicks);
+    this.tempo?.add(tempoFlux[0], tempoFlux[1], tempoFlux[2], this.quietTicks);
     return { spectrum: { level: this.level, bands, energy: this.smoothEnergy, hits: this.hits,
-      bpm: this.tempo.bpm, confidence: this.tempo.confidence }, quiet: this.quietTicks >= 5 };
+      bpm: this.tempo ? this.tempo.bpm : this.fixedBpm, confidence: this.tempo?.confidence ?? 1 },
+      quiet: this.quietTicks >= 5 };
   }
 
   accumulatePower(samples) {
@@ -125,37 +127,5 @@ export class Spectrum {
     transform(real, imaginary);
     const scale = 8 / (fftSize * fftSize);
     for (let i = 0; i < power.length; i++) power[i] += scale * (real[i] ** 2 + imaginary[i] ** 2);
-  }
-}
-
-// Browser port of Audio/DemoTrack.cs. Samples go straight to the analyzer.
-const notes = [65.41, 55, 73.42, 49];
-
-export class DemoTrack {
-  sample = 0;
-  random = 0x901cf3a7;
-  previousNoise = 0;
-
-  constructor(sampleRate) { this.sampleRate = sampleRate; }
-
-  push(spectrum) {
-    const time = this.sample++ / this.sampleRate;
-    const step = Math.floor(time * 2) % 32;
-    const phase = time % 0.5;
-    const eighth = phase % 0.25;
-    const bass = notes[Math.floor(step / 4) % notes.length];
-    const kick = Math.sin(tau * (51 * phase + 3.2 * (1 - Math.exp(-38 * phase)))) * Math.exp(-19 * phase) * 0.64;
-    const note = (Math.sin(tau * bass * phase) + 0.24 * Math.sin(tau * bass * 3 * phase)) * Math.exp(-9 * phase) * 0.19;
-    const chord = (Math.sin(tau * bass * 6 * eighth) + Math.sin(tau * bass * 9 * eighth)) * Math.exp(-16 * eighth) * 0.065;
-    this.random ^= this.random << 13;
-    this.random ^= this.random >>> 17;
-    this.random ^= this.random << 5;
-    const noise = (this.random >>> 0) / 0xffffffff * 2 - 1;
-    const hat = (noise - this.previousNoise) * Math.exp(-95 * eighth) * 0.10;
-    const snare = step % 2 ? (noise * 0.24 + Math.sin(tau * 194 * phase) * 0.13) * Math.exp(-38 * phase) : 0;
-    this.previousNoise = noise;
-    const mix = (kick + snare) * (step < 24 ? 1 : 0.45) + note;
-    const gain = 0.8 * Math.min(1, eighth * 1500);
-    spectrum.push((mix + chord + hat) * gain, (mix + chord * 0.8 + hat * 0.75) * gain);
   }
 }

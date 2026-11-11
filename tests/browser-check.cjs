@@ -18,6 +18,11 @@ async function waitFor(check, detail, limit = 6000) {
   throw new Error(detail);
 }
 
+async function chooseVisual(page, id) {
+  await page.locator('#scene-toggle').click();
+  await page.locator(`#scene-grid .scene-card[data-scene="${id}"]`).click();
+}
+
 async function checkBeatStackMotion(page) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   try {
@@ -25,11 +30,16 @@ async function checkBeatStackMotion(page) {
       const { createBeatStack } = await import('/assets/beat-stack.mjs');
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d', { alpha: false });
-      const arc = ctx.arc.bind(ctx);
-      let headX;
-      ctx.arc = (x, y, radius, ...args) => {
-        if (radius === 24) headX = x;
-        arc(x, y, radius, ...args);
+      const lineTo = ctx.lineTo.bind(ctx);
+      const stroke = ctx.stroke.bind(ctx);
+      let point, toes;
+      ctx.lineTo = (x, y) => {
+        point = [x, y];
+        lineTo(x, y);
+      };
+      ctx.stroke = () => {
+        if (ctx.lineWidth === 0.125) toes.push(point);
+        stroke();
       };
       const scene = createBeatStack(canvas);
       scene.resize(1280, 720);
@@ -39,19 +49,21 @@ async function checkBeatStackMotion(page) {
         bands, bpm: null, hits: [0, 0, 0],
       } };
       const sample = dt => {
+        toes = [];
         scene.render(dt, frame, 1);
-        return headX;
+        return toes;
       };
       const unlocked = [sample(0), sample(0.25)];
       frame.spectrum.bpm = 120;
       frame.spectrum.hits[0]++;
-      const locked = [sample(0), sample(0.25), sample(0.25), sample(0.25)];
+      const locked = [sample(0), sample(0.09), sample(0.09), sample(0.09)];
       return { unlocked, locked };
     });
-    assert.equal(result.unlocked[0], result.unlocked[1], 'Beat Stack should wait for tempo lock');
-    const [firstBeat, firstStep, secondBeat, secondStep] = result.locked;
-    assert(firstBeat - firstStep > 10 && secondStep - secondBeat > 10,
-      'Beat Stack should rock and step on both beats with reduced motion enabled');
+    assert.deepEqual(result.unlocked[0], result.unlocked[1], 'Beat Stack should wait for tempo lock');
+    const [planted, pivot, cross, open] = result.locked;
+    assert(planted[0][0] < planted[1][0] && cross[0][0] > cross[1][0] && open[0][0] < open[1][0],
+      'Beat Stack should cross and reopen its feet within one beat with reduced motion enabled');
+    assert(Math.abs(planted[0][0] - pivot[0][0]) > 0.25, 'Beat Stack should pivot before the crossover');
   } finally {
     await page.emulateMedia({ reducedMotion: null });
   }
@@ -277,10 +289,10 @@ async function main() {
     const desktop = await desktopContext.newPage();
     await desktop.addInitScript(() => {
       window.scenePaints = 0;
-      const drawImage = CanvasRenderingContext2D.prototype.drawImage;
-      CanvasRenderingContext2D.prototype.drawImage = function (...args) {
-        if (this.canvas.id === 'scene' && args.length === 3 && args[0].width === this.canvas.width) window.scenePaints++;
-        return drawImage.apply(this, args);
+      const setTransform = CanvasRenderingContext2D.prototype.setTransform;
+      CanvasRenderingContext2D.prototype.setTransform = function (...args) {
+        if (this.canvas.dataset.scene === 'stick-dancer') window.scenePaints++;
+        return setTransform.apply(this, args);
       };
     });
     const errors = [];
@@ -289,6 +301,16 @@ async function main() {
     await desktop.goto(url);
     const status = () => desktop.locator('#status').textContent();
     await waitFor(async () => await status() === 'Ready', 'Desktop did not connect');
+    assert.match(await desktop.locator('#current-scene-name').textContent(), /Stick Dancer/);
+    assert.equal(await desktop.locator('#console #scene-toggle').count(), 0, 'Scene chooser must be outside the controls panel');
+    await desktop.locator('#scene-toggle').click();
+    assert.equal(await desktop.locator('#scene-grid .scene-card').count(), 7, 'Every visual needs a preview');
+    assert.equal(await desktop.locator('#scene-grid .scene-card[data-scene="bullet-hell"]').count(), 0);
+    await desktop.locator('#shuffle-bars').selectOption('64');
+    await desktop.locator('#shuffle-toggle').click();
+    assert.equal(await desktop.locator('#shuffle-toggle').getAttribute('aria-pressed'), 'true');
+    await desktop.locator('#shuffle-toggle').click();
+    await desktop.locator('#close-scenes').click();
     if (process.env.VIZUIL_SOAK_ONLY === '1') { await soak(desktop, status, errors); return; }
     await checkBeatStackMotion(desktop);
     await checkCarrierBeacon(desktop);
@@ -342,14 +364,15 @@ async function main() {
     phone.on('pageerror', error => errors.push(error.message));
     await phone.goto(viewerUrl);
     await waitFor(async () => await phone.locator('#status').textContent() === 'Silent demo', 'Mobile demo did not sync');
+    assert.equal(await phone.locator('#scene').getAttribute('data-scene'), 'stick-dancer');
     assert.equal(await phone.locator('#console').isVisible(), false);
     await phone.waitForFunction(() => document.body.classList.contains('sleep'));
     await delay(250);
     await phone.screenshot({ path: path.join(evidence, 'phone.png'), scale: 'css' });
 
     await desktop.locator('#close-share').click();
-    await desktop.locator('#picker').selectOption('block-party');
-    await waitFor(async () => await desktop.locator('#scene-name').textContent() === 'Block Party', 'Desktop did not switch scenes');
+    await chooseVisual(desktop, 'block-party');
+    await waitFor(async () => await desktop.locator('#scene').getAttribute('data-scene') === 'block-party', 'Desktop did not switch scenes');
     await checkBlockParty(desktop);
     await waitFor(async () => await phone.locator('#scene').getAttribute('data-scene') === 'block-party', 'Phone did not follow the selected scene');
     await desktop.setViewportSize({ width: 1920, height: 1080 });
@@ -368,7 +391,7 @@ async function main() {
     await phone.screenshot({ path: path.join(evidence, 'block-party-phone.png'), scale: 'css' });
 
     await desktop.mouse.move(255, 300);
-    await desktop.locator('#picker').selectOption('tidal-garden');
+    await chooseVisual(desktop, 'tidal-garden');
     for (const [page, name] of [[desktop, 'tidal-garden'], [phone, 'tidal-garden-phone']]) {
       await page.waitForFunction(() => document.querySelector('#scene').dataset.scene === 'tidal-garden');
       assert(await page.locator('#scene').evaluate(canvas => {
@@ -382,8 +405,8 @@ async function main() {
       assert(!(await page.screenshot({ scale: 'css' })).equals(first), `${name} did not animate`);
     }
     await desktop.mouse.move(256, 302);
-    await desktop.locator('#picker').selectOption('block-party');
-    await waitFor(async () => await desktop.locator('#scene-name').textContent() === 'Block Party', 'Could not leave the aquarium');
+    await chooseVisual(desktop, 'block-party');
+    await waitFor(async () => await desktop.locator('#scene').getAttribute('data-scene') === 'block-party', 'Could not leave the aquarium');
     assert.equal(await desktop.locator('.aquarium-caption').count(), 0);
     console.log('Tidal Garden rendered and animated on desktop and the shared phone viewer.');
 
@@ -423,8 +446,8 @@ async function main() {
     const stoppedPose = await mapPixels();
     await delay(500);
     assert.equal(await mapPixels(), stoppedPose, 'Block Party kept moving after Stop');
-    await desktop.locator('#picker').selectOption('bullet-hell');
-    await waitFor(async () => await desktop.locator('#scene-name').textContent() === 'Bullet Hell', 'Could not return to Bullet Hell');
+    await chooseVisual(desktop, 'stick-dancer');
+    await waitFor(async () => await desktop.locator('#scene').getAttribute('data-scene') === 'stick-dancer', 'Could not return to Stick Dancer');
     assert.deepEqual(errors, []);
     console.log('Pyramid steps, every-beat bounces, fourth-beat swaps, spectrum history, fullscreen, phone layout, and sharing passed.');
     if (process.env.VIZUIL_PHONE_ONLY === '1') return;

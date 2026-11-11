@@ -3,7 +3,7 @@ import { Mesh, box, oval, branch, transform } from './aquarium-geometry.mjs';
 const TAU = Math.PI * 2;
 const ivory = '#ced6cc', shell = '#8daba4', edge = '#455d62';
 const graphite = '#232c39', rubber = '#131b23', metal = '#4e656b', white = '#e1eee5';
-export const OPERATOR_X = 1.16, OPERATOR_Z = 0.49, OPERATOR_YAW = -1.15;
+export const OPERATOR_X = -1.36, OPERATOR_Z = 2.35, OPERATOR_YAW = Math.PI;
 
 // Clockwise as viewed from the back. Each bevel keeps the same outline.
 function outline(width, height, radius, z) {
@@ -92,7 +92,7 @@ function room() {
       addRing(halos, center, radius * size + .081, .188, .54, tilt, '#333333');
     }
   }
-  const floorCenter = [1.22, .027, .88];
+  const floorCenter = [OPERATOR_X, .027, OPERATOR_Z];
   for (const radius of [1.75, 2.05, 2.12]) addRing(rings, floorCenter, radius, .014, 1, Math.PI / 2, white);
   return { backdrop, floor, frame, wiring, rings, halos };
 }
@@ -108,10 +108,11 @@ function desk() {
   }
   furniture.add(box(-1.14, 1.43, 1.47, 2.98, .08, .22, edge));
   trim.add(box(-1.19, 1.47, 1.58, 2.85, .022, .023, white));
-  furniture.add(box(-1.89, 1.64, 1.04, .64, .12, .40, graphite));
-  furniture.add(box(-1.89, 1.71, 1.04, .59, .027, .36, metal));
-  for (let i = 0; i < 4; i++) trim.add(box(-2.09 + i * .108, 1.729, 1.14, .04, .013, .033, white));
-  furniture.add(oval(-1.79, 1.751, .98, .065, .041, .065, rubber, 10, 4));
+  const panelX = -2.45;
+  furniture.add(box(panelX, 1.64, 1.04, .64, .12, .40, graphite));
+  furniture.add(box(panelX, 1.71, 1.04, .59, .027, .36, metal));
+  for (let i = 0; i < 4; i++) trim.add(box(panelX - .20 + i * .108, 1.729, 1.14, .04, .013, .033, white));
+  furniture.add(oval(panelX + .10, 1.751, .98, .065, .041, .065, rubber, 10, 4));
 
   const keyboard = transform(OPERATOR_X, 0, OPERATOR_Z, OPERATOR_YAW);
   furniture.add(box(0, 1.648, 1.34, 1.40, .11, .51, graphite), keyboard);

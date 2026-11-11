@@ -4,10 +4,38 @@ import { buildSignalDesk, OPERATOR_X, OPERATOR_Z, OPERATOR_YAW } from './signal-
 import { BINS, COLUMNS, SCREEN_INTERVAL, PALETTES, createDeskScreens } from './signal-desk-screens.mjs';
 
 const BANDS_PER_HAND = BINS / 2;
+const BEATS_PER_MEASURE = 4;
+const GLIDE_SECONDS = .32;
+const CAMERA_RADIUS = 3.2;
+const SHOTS = [
+  { angle: -.71, height: 3.48, aim: 2.66 },
+  { angle: .71, height: 1.25, aim: 2.77 },
+  { angle: -.71, height: 1.25, aim: 2.77 },
+  { angle: .71, height: 3.48, aim: 2.66 },
+];
 const clamp = v => Math.max(0, Math.min(1, v));
 const ease = (value, target, speed, dt) => target + (value - target) * Math.exp(-speed * dt);
 const origin = identity();
 const operatorRoot = transform(OPERATOR_X, 0, OPERATOR_Z, OPERATOR_YAW);
+
+export function signalDeskCamera(clock, aspect, presentation = 1, reducedMotion = false) {
+  const beat = clock.started && !reducedMotion ? clock.beats - 1 : 0;
+  const measure = Math.floor(beat / BEATS_PER_MEASURE);
+  const shot = SHOTS[measure % SHOTS.length];
+  const previous = measure > 0 ? SHOTS[(measure - 1) % SHOTS.length] : shot;
+  const progress = measure === 0 ? 1
+    : clamp(((beat % BEATS_PER_MEASURE) * 60 / clock.bpm + clock.elapsed) / GLIDE_SECONDS);
+  const blend = progress * progress * (3 - 2 * progress);
+  const angle = previous.angle + (shot.angle - previous.angle) * blend;
+  const eye = [
+    OPERATOR_X + CAMERA_RADIUS * Math.sin(angle),
+    previous.height + (shot.height - previous.height) * blend,
+    OPERATOR_Z + CAMERA_RADIUS * Math.cos(angle),
+  ];
+  const target = [OPERATOR_X, previous.aim + (shot.aim - previous.aim) * blend, .35];
+  const height = Math.max(3.90, 4.70 / aspect) + (1 - presentation) * .24;
+  return { eye, view: cameraMatrix(eye, target, height * aspect, height, true) };
+}
 
 export class SignalDeskAudio {
   clock = new BeatClock();
@@ -124,7 +152,8 @@ function makeRenderer(gl) {
         vec2 coarse = abs(fract(pos * .31 + .5) - .5);
         float major = 1. - smoothstep(.003, .012, min(coarse.x, coarse.y));
         float pool = exp(-.19 * dot(pos - vec2(-.55,.52), pos - vec2(-.55,.52)));
-        float contact = exp(-5. * dot(pos - vec2(1.23,.56), pos - vec2(1.23,.56)));
+        vec2 chair = pos - vec2(${OPERATOR_X}, ${OPERATOR_Z});
+        float contact = exp(-5. * dot(chair, chair));
         float fog = 1. - smoothstep(6., 24., distanceToEye);
         color = uDark + (vec3(.017,.022,.027) + uPrimary *
           (.115 * pool * (1. + uPulse * .18) + .094 * grid + .052 * major)) * fog;
@@ -261,7 +290,7 @@ function drawOperator(draw, operator, signal, colors, time, reducedMotion) {
   draw(clothes, operatorRoot);
   draw(accents, operatorRoot, 1, colors.primary, .70 + signal.pulse * .19);
   const [low, high] = signal.hands;
-  const headYaw = .20 + .15 * (high.strength - low.strength);
+  const headYaw = .12 * (high.strength - low.strength);
   const nod = reducedMotion ? 0 : -.056 * signal.pulse;
   const helmet = multiply(operatorRoot, transform(0, 2.65 + nod, .13, headYaw, 1, 1, 1, nod));
   draw(head, helmet);
@@ -362,13 +391,7 @@ export function createSignalDesk(canvas) {
         refresh = false;
       }
       const colors = PALETTES[signal.palette];
-      const yaw = -.042 + (reducedMotion.matches ? 0 : .13 * Math.sin(time * .29));
-      const portrait = aspect < .88;
-      const distance = 10.9;
-      const subject = [portrait ? -.88 : -.50, portrait ? 2.30 - .76 * (1 - presentation) : 2.25, .04];
-      const eye = [subject[0] + distance * Math.sin(yaw), 4.68, distance * Math.cos(yaw)];
-      const height = Math.max(5.90, (portrait ? 5.95 : 7.82) / aspect) + (1 - presentation) * (portrait ? .63 : .27);
-      const view = cameraMatrix(eye, subject, height * aspect, height, true);
+      const { eye, view } = signalDeskCamera(signal.clock, aspect, presentation, reducedMotion.matches);
       renderer.begin(view, eye, colors, signal.pulse);
       const { draw } = renderer;
       draw(models.backdrop, origin, 4);

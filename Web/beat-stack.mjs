@@ -1,5 +1,5 @@
 import { BeatClock } from './beat-clock.mjs';
-import { BeatStackGame, PieceSelector, PIECES, COLUMNS, ROWS, BINS, BINS_PER_PIECE, pieceCells } from './beat-stack-game.mjs';
+import { BeatStackGame, PieceSelector, PIECES, COLUMNS, ROWS, BINS, bandEdge, pieceForBin, pieceCells } from './beat-stack-game.mjs';
 import { drawPlayer } from './beat-stack-player.mjs';
 
 const PAPER = '#f8eddc';
@@ -9,10 +9,9 @@ const GRAPH = '#1b1428';
 const HISTORY_WIDTH = 140;
 const FONT = 'Consolas, ui-monospace, monospace';
 const TITLE = '"Archivo Black", "Arial Black", system-ui, sans-serif';
-const WIDE = { width: 1000, height: 592, gridX: 381, gridY: 59, cell: 33, sideX: 690, sideWidth: 285 };
-const TALL = { width: 400, height: 502, gridX: 21, gridY: 89, cell: 26, sideX: 246, sideWidth: 142 };
+const WIDE = { width: 1000, height: 592, gridX: 398, gridY: 59, cell: 23, sideX: 690, sideWidth: 285 };
+const TALL = { width: 400, height: 522, gridX: 21, gridY: 89, cell: 20, sideX: 246, sideWidth: 142 };
 const lerp = (a, b, t) => a + (b - a) * t;
-const section = bin => Math.floor(bin / BINS_PER_PIECE);
 const frequency = edge => 40 * 400 ** (edge / BINS);
 
 function frequencyLabel(hz) {
@@ -20,7 +19,7 @@ function frequencyLabel(hz) {
 }
 
 const ranges = PIECES.map((_, type) =>
-  [frequency(type * BINS_PER_PIECE), frequency((type + 1) * BINS_PER_PIECE)].map(frequencyLabel).join('–'));
+  [frequency(bandEdge(type)), frequency(bandEdge(type + 1))].map(frequencyLabel).join('–'));
 
 function text(ctx, value, x, y, size, color = PAPER, font = FONT, weight = 700) {
   ctx.fillStyle = color;
@@ -59,7 +58,7 @@ function drawBackdrop(ctx, width, height, centerX) {
 
 function block(ctx, x, y, size, type, hot = false) {
   const [dark, color, light] = PIECES[type].colors;
-  const round = PIECES[type].capsule ? size * 0.4 : size * 0.12;
+  const round = size * 0.12;
   const rim = size * 0.11;
   panel(ctx, x, y, size, size, round, dark);
   panel(ctx, x + rim, y + rim * 0.67, size - rim * 2, size - rim * 2.25, round * 0.8, color);
@@ -71,24 +70,8 @@ function block(ctx, x, y, size, type, hot = false) {
   }
 }
 
-function capsule(ctx, [[x1, y1], [x2, y2]], size, color, hot) {
-  const [dark, main, light] = color;
-  const length = Math.hypot(x2 - x1, y2 - y1);
-  ctx.save();
-  ctx.translate((x1 + x2 + size) / 2, (y1 + y2 + size) / 2);
-  ctx.rotate(Math.atan2(y2 - y1, x2 - x1));
-  const width = size + length;
-  panel(ctx, -width / 2, -size * 0.46, width, size * 0.92, size * 0.46, dark);
-  panel(ctx, -width / 2 + size * 0.1, -size * 0.39, width - size * 0.2, size * 0.68, size * 0.34, main);
-  panel(ctx, -width * 0.3, -size * 0.27, width * 0.6, size * (hot ? 0.11 : 0.075), size * 0.05, light);
-  ctx.fillStyle = dark;
-  ctx.fillRect(-size * 0.025, -size * 0.32, size * 0.05, size * 0.67);
-  ctx.restore();
-}
-
 function shape(ctx, type, coordinates, size, hot) {
-  if (PIECES[type].capsule) capsule(ctx, coordinates, size, PIECES[type].colors, hot);
-  else for (const [x, y] of coordinates) block(ctx, x, y, size, type, hot);
+  for (const [x, y] of coordinates) block(ctx, x, y, size, type, hot);
 }
 
 function preview(ctx, type, centerX, centerY, cell) {
@@ -216,7 +199,7 @@ function drawField(ctx, layout, game, action, motion, pulse) {
     ctx.textAlign = 'start';
   }
   ctx.restore();
-  text(ctx, `${String(game.cleared).padStart(3, '0')} CLEARED`, x, y + height + (wide ? 24 : 19), wide ? 13 : 10, LIME);
+  text(ctx, `${String(game.cleared).padStart(3, '0')} LINES`, x, y + height + (wide ? 24 : 19), wide ? 13 : 10, LIME);
   ctx.textAlign = 'right';
   text(ctx, wide ? `${String(game.placed).padStart(3, '0')} PLAYED` : `ROUND ${game.round}`,
     x + width, y + height + (wide ? 24 : 19), wide ? 11 : 9, MUTED);
@@ -230,7 +213,6 @@ function drawSpectrum(ctx, layout, history, choice, pulse) {
   const y = wide ? 221 : 195;
   const graphWidth = width - (wide ? 109 : 34);
   const rowHeight = wide ? 8.75 : 5.4;
-  const groupHeight = rowHeight * BINS_PER_PIECE;
   const graphHeight = rowHeight * BINS;
   const [dark, accent] = PIECES[choice?.type ?? 3].colors;
 
@@ -259,7 +241,8 @@ function drawSpectrum(ctx, layout, history, choice, pulse) {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(history, x, y, graphWidth, graphHeight);
   for (const [type, { colors }] of PIECES.entries()) {
-    const row = y + (PIECES.length - 1 - type) * groupHeight;
+    const row = y + (BINS - bandEdge(type + 1)) * rowHeight;
+    const groupHeight = (bandEdge(type + 1) - bandEdge(type)) * rowHeight;
     const active = choice?.type === type;
     ctx.fillStyle = active ? `${dark}9e` : '#30253f';
     ctx.fillRect(x + graphWidth, row, width - graphWidth, groupHeight);
@@ -318,7 +301,7 @@ export function createBeatStack(canvas) {
     for (let bin = 0; bin < BINS; bin++) {
       if (bands[bin] < 0.055) continue;
       historyCtx.globalAlpha = Math.min(1, (bands[bin] * 1.35) ** 1.48);
-      historyCtx.fillStyle = PIECES[section(bin)].colors[1];
+      historyCtx.fillStyle = PIECES[pieceForBin(bin)].colors[1];
       historyCtx.fillRect(HISTORY_WIDTH - 1, BINS - 1 - bin, 1, 1);
     }
     historyCtx.globalAlpha = 1;
@@ -371,13 +354,14 @@ export function createBeatStack(canvas) {
     drawTitle(ctx, wide, game, pulse, tempo, spectrum, frame?.status);
     // Footwork and gestures are part of the beat visualization itself.
     const player = {
-      tempo,
-      beat: clock.started ? game.beat : 0,
-      phase: Math.min(1, age * (tempo ?? 0) / 60),
+      beat: clock.beats,
+      phase: Math.min(1, clock.elapsed * (tempo ?? 0) / 60),
       bounce: pulse,
       shift: action.kind === 'shift' ? Math.sign(action.to.x - action.from.x) : 0,
       dropping: (action.kind === 'drop' || action.kind === 'land') && action.to.y > action.from.y,
-      motion,
+      turnSide: action.kind === 'turn' ?
+        (action.to.turn === (action.from.turn + 1) % PIECES[action.to.type].turns.length ? 1 : -1) : 0,
+      actionPhase: tempo ? age * tempo / 60 : 1,
     };
     if (wide) drawPlayer(ctx, 16, 284, 328, player);
     else drawPlayer(ctx, 246, 389, 143, player);

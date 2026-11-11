@@ -1,40 +1,35 @@
 import { emptySpectrum } from './site-spectrum.mjs';
 
-export const captureSources = {
-  browser: {
-    name: 'Browser tab', device: 'Tab audio',
-    instructions: 'Choose the tab playing sound and enable “Also share tab audio”.',
-    noAudio: 'The selected tab supplied no audio. Choose it again with tab audio enabled.',
-  },
-  window: {
-    name: 'App window', device: 'App window audio',
-    instructions: 'Choose the app’s window and enable application audio if offered.',
-    noAudio: 'The selected window supplied no audio. Enable window audio in the picker or try the app in a browser tab.',
-  },
-  monitor: {
-    name: 'Entire screen', device: 'System audio',
-    instructions: 'Choose Entire Screen and enable “Also share system audio”.',
-    noAudio: 'The selected screen supplied no audio. Enable system audio in the picker or choose Browser tab or App window.',
-  },
-};
+const demoBpm = 131;
+const demoBeats = 388;
+const demoUrl = new URL('./dadon.flac', import.meta.url);
 
-function captureOptions(surface) {
-  return {
-    video: { displaySurface: surface, width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { ideal: 1 } },
-    audio: { suppressLocalAudioPlayback: false },
-    audioSelection: 'preferred',
-    monitorTypeSurfaces: surface === 'monitor' ? 'include' : 'exclude',
-    systemAudio: surface === 'monitor' ? 'include' : 'exclude',
-    windowAudio: surface === 'window' ? 'window' : 'exclude',
-    selfBrowserSurface: 'exclude',
-    surfaceSwitching: 'exclude',
-  };
-}
+const systemCaptureOptions = {
+  video: { displaySurface: 'monitor', width: { ideal: 320 }, height: { ideal: 180 }, frameRate: { ideal: 1 } },
+  audio: { suppressLocalAudioPlayback: false },
+  audioSelection: 'preferred',
+  monitorTypeSurfaces: 'include',
+  systemAudio: 'include',
+  windowAudio: 'exclude',
+  selfBrowserSurface: 'exclude',
+  surfaceSwitching: 'exclude',
+};
 
 function release(session) {
   if (!session) return;
+  session.download?.abort();
   session.stream?.getTracks().forEach(track => track.stop());
   void session.context.close().catch(() => {});
+}
+
+async function loadDemo(context, signal) {
+  try {
+    const response = await fetch(demoUrl, { signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await context.decodeAudioData(await response.arrayBuffer());
+  } catch (cause) {
+    throw new Error('Could not load the DaDon demo track. Try Demo again.', { cause });
+  }
 }
 
 export function createSiteAudio(receive, reportError) {
@@ -64,19 +59,25 @@ export function createSiteAudio(receive, reportError) {
     endCurrent();
   }
 
-  async function select(source, surface) {
+  function demoBeatPosition() {
+    if (!current?.demo) return;
+    const { context, demo } = current;
+    const time = context.getOutputTimestamp?.().contextTime ?? context.currentTime;
+    return Math.max(0, time - demo.start) / demo.secondsPerBeat;
+  }
+
+  async function select(source) {
     if (source === 'off') {
       stop();
       return;
     }
 
+    const live = source === 'live';
     const context = new AudioContext({ sampleRate: 48000 });
-    const next = { context, stream: null };
+    const next = { context, stream: null, download: live ? null : new AbortController() };
     release(pending);
     pending = next;
-    const live = source === 'live';
-    const choice = live ? captureSources[surface] : null;
-    const device = choice?.device ?? null;
+    const device = live ? 'System audio' : 'DaDon';
     if (!current) publish(source, 'connecting', device);
     const running = context.resume();
     // The sharing prompt can stay open while the audio context starts.
@@ -84,36 +85,59 @@ export function createSiteAudio(receive, reportError) {
 
     try {
       if (live) {
-        const stream = await navigator.mediaDevices.getDisplayMedia(captureOptions(surface));
+        const stream = await navigator.mediaDevices.getDisplayMedia(systemCaptureOptions);
         if (pending !== next) {
           stream.getTracks().forEach(track => track.stop());
           return;
         }
         next.stream = stream;
-        if (stream.getVideoTracks()[0]?.getSettings().displaySurface !== surface) {
-          throw new Error(`Choose a source under ${choice.name} in the browser picker. ${choice.instructions}`);
+        if (stream.getVideoTracks()[0]?.getSettings().displaySurface !== 'monitor') {
+          throw new Error('Choose Entire Screen and turn on system audio in the browser picker.');
         }
-        if (!stream.getAudioTracks().length) throw new Error(choice.noAudio);
+        if (!stream.getAudioTracks().length) {
+          throw new Error('No system audio was shared. Turn on system audio in the browser picker if it’s available.');
+        }
       }
-      await context.audioWorklet.addModule(new URL('./site-audio-worklet.mjs', import.meta.url));
-      await running;
+      const [buffer] = await Promise.all([
+        live ? null : loadDemo(context, next.download.signal),
+        context.audioWorklet.addModule(new URL('./site-audio-worklet.mjs', import.meta.url)),
+        running,
+      ]);
       if (pending !== next) return;
 
       const node = new AudioWorkletNode(context, 'vizuil-analyzer', {
-        channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [1], processorOptions: { demo: !live },
+        channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [1],
+        processorOptions: { bpm: live ? null : demoBpm },
       });
+      let playback;
       if (live) {
         // Keep the share active with the browser's stop control. Only the audio enters Web Audio.
         const tracks = next.stream.getTracks();
-        if (tracks.some(track => track.readyState !== 'live')) throw new Error('Sharing ended. Choose the audio source again.');
+        if (tracks.some(track => track.readyState !== 'live')) throw new Error('Sharing ended. Share system audio again.');
         for (const track of tracks) {
           track.addEventListener('ended', () => { if (current === next) endCurrent(); });
         }
         const audio = new MediaStream(next.stream.getAudioTracks());
         context.createMediaStreamSource(audio).connect(node);
+      } else {
+        playback = context.createBufferSource();
+        playback.buffer = buffer;
+        playback.loopStart = 0;
+        playback.loopEnd = buffer.duration;
+        playback.loop = true;
+        next.playback = playback;
+        playback.connect(context.destination);
+        playback.connect(node);
       }
-      node.port.onmessage = ({ data: { spectrum, quiet } }) => {
-        if (current === next) publish(source, live ? (quiet ? 'quiet' : 'live') : 'demo', device, spectrum);
+      let revision = 0;
+      next.restartAnalysis = () => {
+        node.port.postMessage(++revision);
+        generation++;
+        publish(source, 'connecting', device);
+      };
+      node.port.onmessage = ({ data }) => {
+        if (current !== next || data.revision !== revision) return;
+        publish(source, live ? (data.quiet ? 'quiet' : 'live') : 'demo', device, data.spectrum);
       };
       node.addEventListener('processorerror', () => {
         if (current !== next) return;
@@ -121,6 +145,12 @@ export function createSiteAudio(receive, reportError) {
         reportError('The audio analyzer stopped. Start listening again.');
       });
       node.connect(context.destination);
+      if (playback) {
+        const start = context.currentTime + 0.02;
+        playback.start(start);
+        // Use the decoded loop length so rounding to whole samples cannot build up drift.
+        next.demo = { start, secondsPerBeat: buffer.duration / demoBeats };
+      }
       release(current);
       current = next;
       pending = null;
@@ -139,5 +169,5 @@ export function createSiteAudio(receive, reportError) {
   }
 
   window.addEventListener('pagehide', stop);
-  return { canCapture, select };
+  return { canCapture, select, demoBeatPosition, kick: () => current?.restartAnalysis() };
 }

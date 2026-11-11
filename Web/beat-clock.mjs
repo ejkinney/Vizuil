@@ -35,6 +35,15 @@ export class BeatClock {
     if (!sameSource || !bpm || tempoJump) this.reset();
     if (!bpm) return false;
     const period = 60 / bpm;
+    if (frame.beatPosition !== undefined) {
+      const wholeBeats = Math.floor(frame.beatPosition);
+      const beats = wholeBeats + 1;
+      this.elapsed = (frame.beatPosition - wholeBeats) * period;
+      const beat = this.started ? beats > this.beats : this.elapsed < 0.08;
+      this.started = true;
+      this.beats = beats;
+      return beat;
+    }
     if (kick && !this.started) {
       this.elapsed = 0;
       this.started = true;

@@ -4,7 +4,8 @@ import { BrawlMotion } from '../Web/block-brawl-motion.mjs';
 const DT = 1 / 120;
 const frame = (bpm = 120) => ({ generation: 1, source: 'demo', status: 'demo', density: 0.65,
   spectrum: { bpm, bands: [0.8, ...Array(31).fill(0)], hits: [0, 0, 0] } });
-const expected = [null, 'block', null, 'dodge', null, 'counter', null, 'kick'];
+const classic = [null, 'block', null, 'dodge', null, 'counter', null, 'kick'];
+const rush = [null, 'parry', 'dash', 'backfist', null, 'dash', 'sweep', 'block'];
 const ticks = (motion, input, seconds) => {
   for (let elapsed = 0; elapsed < seconds; elapsed += DT) motion.advance(DT, input);
 };
@@ -15,18 +16,26 @@ for (const bpm of [50, 120, 220]) {
   motion.advance(0, input);
   input.spectrum.hits[0]++;
   const beats = [];
+  const visits = new Set();
   let previous;
-  while (beats.length < 16 && motion.time < 24) {
+  while (beats.length < 33 && motion.time < 45) {
     motion.advance(DT, input);
-    const id = motion.lead * 8 + motion.beat;
+    const [x, z] = motion.center;
+    if (Math.abs(x) >= 0.7 && Math.abs(z) >= 0.6) visits.add(`${Math.sign(x)},${Math.sign(z)}`);
+    for (const [index, pose] of motion.poses.entries()) {
+      const worldX = x + (index === 0 ? 1 : -1) * (pose.x - 1.3);
+      assert(Math.hypot(worldX / 3.11, (z + pose.z) / 2.02) < 1.02, 'Fighters stay on the marked arena');
+    }
+    const id = motion.round * 8 + motion.beat;
     if (motion.beat < 0 || id === previous) continue;
     previous = id;
-    const kind = expected[motion.beat];
+    const kind = (motion.round === 1 || motion.round === 2 ? rush : classic)[motion.beat];
     assert.equal(motion.accent?.kind ?? null, kind);
     assert.equal(motion.phase, 0, 'Each event starts at its authored downbeat pose');
     if (kind) {
       assert.equal(motion.accent.age, 0);
-      assert.equal(motion.accent.actor, kind === 'counter' ? 1 - motion.lead : motion.lead);
+      const reply = ['counter', 'backfist'].includes(kind) || (kind === 'dash' && motion.beat === 2);
+      assert.equal(motion.accent.actor, reply ? 1 - motion.lead : motion.lead);
       if (kind === 'block') {
         const separation = 2.6 - motion.poses.reduce((total, pose) => total + pose.x + pose.nearHand[0], 0);
         assert(separation > 0 && separation < 0.31, 'The two gloves meet at the block pose');
@@ -37,10 +46,21 @@ for (const bpm of [50, 120, 220]) {
       }
       if (kind === 'counter') assert(motion.poses[1 - motion.lead].nearHand[0] > 1.10);
       if (kind === 'kick') assert(motion.poses[motion.lead].nearFoot[1] > 1.3);
+      if (kind === 'dash') {
+        const direction = motion.round === 1 ? 1 : -1;
+        assert.equal(motion.accent.direction, direction);
+        assert(motion.poses[motion.accent.actor].z * direction > 0.9);
+        assert(Math.abs(motion.poses[1 - motion.accent.actor].z) < 0.1);
+      }
+      if (kind === 'sweep') {
+        assert(motion.poses[motion.lead].nearFoot[1] < 0.35);
+        assert(motion.poses[1 - motion.lead].farFoot[1] > 0.5);
+      }
     }
     beats.push({ id, time: motion.time });
   }
-  assert.deepEqual(beats.map(beat => beat.id), Array.from({ length: 16 }, (_, i) => i));
+  assert.deepEqual(beats.map(beat => beat.id), Array.from({ length: 33 }, (_, i) => i % 32));
+  assert.equal(visits.size, 4, 'The spar crosses all four quadrants of the arena');
   for (const [index, beat] of beats.entries()) {
     assert(Math.abs(beat.time - beats[0].time - index * 60 / bpm) < DT + 1e-8);
   }
@@ -74,6 +94,7 @@ ticks(motion, input, 0.22);
 assert.equal(motion.beat, -1);
 assert.equal(motion.accent, null);
 assert(motion.poses.every(pose => Math.abs(pose.x) < 0.05), 'Stop returns both fighters to guard');
+assert.deepEqual(motion.center, [0, 0], 'Stop returns the exchange to the center');
 
 input.status = 'live';
 input.source = 'live';
@@ -95,4 +116,4 @@ assert.equal(motion.beat, -1);
 ticks(motion, input, 0.35);
 assert.equal(motion.beat, 0, 'Reconnection starts a new phrase');
 
-console.log('Block Brawl choreography at 50, 120, and 220 BPM, tempo changes, source resets, Stop, and reconnect passed.');
+console.log('Artificial Spar choreography at 50, 120, and 220 BPM, arena coverage, tempo changes, source resets, Stop, and reconnect passed.');
