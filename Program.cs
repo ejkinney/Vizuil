@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using VisualWaltz.Audio;
+using Vizuil.Audio;
 
-namespace VisualWaltz;
+namespace Vizuil;
 
 internal static class Program
 {
@@ -9,10 +9,10 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        using var instance = new Mutex(false, "Local\\VisualWaltz", out bool created);
+        using var instance = new Mutex(false, "Local\\Vizuil", out bool created);
         if (!created)
         {
-            MessageBox.Show("Visual Waltz is already running. Open it from the Windows system tray.", "Visual Waltz");
+            MessageBox.Show("Vizuil is already running. Open it from the Windows system tray.", "Vizuil");
             return;
         }
 
@@ -22,10 +22,10 @@ internal static class Program
         {
             string url = host.StartAsync().GetAwaiter().GetResult();
             using var icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
-            using var tray = new NotifyIcon { Text = "Visual Waltz", Icon = icon ?? SystemIcons.Application, Visible = true };
+            using var tray = new NotifyIcon { Text = "Vizuil", Icon = icon ?? SystemIcons.Application, Visible = true };
             using var menu = new ContextMenuStrip();
             using var context = new ApplicationContext();
-            menu.Items.Add("Open Visual Waltz", null, (_, _) => OpenBrowser(url));
+            menu.Items.Add("Open Vizuil", null, (_, _) => OpenBrowser(url));
             menu.Items.Add("Quit", null, (_, _) => context.ExitThread());
             tray.ContextMenuStrip = menu;
             tray.DoubleClick += (_, _) => OpenBrowser(url);
@@ -35,7 +35,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Visual Waltz could not start.\n\n{ex.Message}", "Visual Waltz", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"Vizuil could not start.\n\n{ex.Message}", "Vizuil", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -53,7 +53,7 @@ internal static class Program
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             Clipboard.SetText(url);
-            MessageBox.Show("Open your browser and paste the Visual Waltz address. The address is on your clipboard.", "Visual Waltz");
+            MessageBox.Show("Open your browser and paste the Vizuil address. The address is on your clipboard.", "Vizuil");
         }
     }
 }

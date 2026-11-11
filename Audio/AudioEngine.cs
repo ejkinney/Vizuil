@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace VisualWaltz.Audio;
+namespace Vizuil.Audio;
 
 internal sealed record AudioState(string Source, string Status, string? Device, int Generation, SpectrumFrame Spectrum);
 

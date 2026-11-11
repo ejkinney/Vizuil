@@ -1,8 +1,8 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using VisualWaltz;
-using VisualWaltz.Audio;
+using Vizuil;
+using Vizuil.Audio;
 
 if (args.Contains("--rebind"))
 {

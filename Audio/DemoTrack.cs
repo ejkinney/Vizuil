@@ -1,4 +1,4 @@
-namespace VisualWaltz.Audio;
+namespace Vizuil.Audio;
 
 // A repeating drum-and-synth arrangement. It feeds the analyzer directly and has no playback output.
 internal sealed class DemoTrack

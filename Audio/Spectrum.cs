@@ -1,6 +1,6 @@
 using NAudio.Dsp;
 
-namespace VisualWaltz.Audio;
+namespace Vizuil.Audio;
 
 internal sealed record SpectrumFrame(float Level, float[] Bands, float[] Energy,
     long[] Hits, double? Bpm, float Confidence)

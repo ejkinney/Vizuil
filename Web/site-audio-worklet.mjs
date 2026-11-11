@@ -1,6 +1,6 @@
 import { DemoTrack, Spectrum } from './site-spectrum.mjs';
 
-class VisualWaltzAnalyzer extends AudioWorkletProcessor {
+class VizuilAnalyzer extends AudioWorkletProcessor {
   analyzer = new Spectrum(sampleRate);
   hop = Math.round(sampleRate / 50);
   filled = 0;
@@ -26,4 +26,4 @@ class VisualWaltzAnalyzer extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('visual-waltz-analyzer', VisualWaltzAnalyzer);
+registerProcessor('vizuil-analyzer', VizuilAnalyzer);

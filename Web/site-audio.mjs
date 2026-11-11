@@ -99,7 +99,7 @@ export function createSiteAudio(receive, reportError) {
       await running;
       if (pending !== next) return;
 
-      const node = new AudioWorkletNode(context, 'visual-waltz-analyzer', {
+      const node = new AudioWorkletNode(context, 'vizuil-analyzer', {
         channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [1], processorOptions: { demo: !live },
       });
       if (live) {

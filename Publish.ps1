@@ -5,18 +5,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$project = Join-Path $PSScriptRoot 'VisualWaltz.csproj'
+$project = Join-Path $PSScriptRoot 'Vizuil.csproj'
 $dist = Join-Path $PSScriptRoot 'dist'
 $portable = Join-Path $dist 'portable'
 $output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $stage = Join-Path $dist ('.portable-publish-' + [Guid]::NewGuid().ToString('N'))
-$executable = Join-Path $portable 'VisualWaltz.exe'
-$candidate = Join-Path $stage 'VisualWaltz.exe'
-$previous = Join-Path $stage 'VisualWaltz.previous.exe'
+$executable = Join-Path $portable 'Vizuil.exe'
+$candidate = Join-Path $stage 'Vizuil.exe'
+$previous = Join-Path $stage 'Vizuil.previous.exe'
 $readme = Join-Path $portable 'README.md'
 $stagedReadme = Join-Path $stage 'README.md'
 
-$publishLock = [Threading.Mutex]::new($false, 'Local\VisualWaltz.PortablePublish')
+$publishLock = [Threading.Mutex]::new($false, 'Local\Vizuil.PortablePublish')
 $lockHeld = $false
 $installed = $false
 try {
@@ -28,10 +28,10 @@ try {
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None -o $stage
     if ($LASTEXITCODE -ne 0) {
-        throw 'Could not update Visual Waltz. See the build error above.'
+        throw 'Could not update Vizuil. See the build error above.'
     }
     if ((Get-Item -LiteralPath $candidate).Length -le 0) {
-        throw 'The Visual Waltz build produced an empty executable.'
+        throw 'The Vizuil build produced an empty executable.'
     }
     $expectedHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $stagedReadme

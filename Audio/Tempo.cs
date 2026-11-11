@@ -1,4 +1,4 @@
-namespace VisualWaltz.Audio;
+namespace Vizuil.Audio;
 
 internal sealed class Tempo
 {

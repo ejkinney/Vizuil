@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using QRCoder;
-using VisualWaltz.Audio;
+using Vizuil.Audio;
 
-namespace VisualWaltz;
+namespace Vizuil;
 
 internal sealed class ViewerHost(AudioEngine audio) : IAsyncDisposable
 {

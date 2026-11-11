@@ -6,6 +6,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\VisualWaltz.csproj" />
+    <ProjectReference Include="..\Vizuil.csproj" />
   </ItemGroup>
 </Project>

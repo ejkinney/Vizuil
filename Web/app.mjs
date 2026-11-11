@@ -6,10 +6,10 @@ const viewer = !hosted && location.pathname.startsWith('/v/');
 document.body.classList.toggle('viewer', viewer);
 const suppliedKey = new URLSearchParams(location.hash.slice(1)).get('key');
 if (!hosted && /^[a-f0-9]{36}$/.test(suppliedKey ?? '')) {
-  sessionStorage.setItem('visual-waltz-key', suppliedKey);
+  sessionStorage.setItem('vizuil-key', suppliedKey);
   history.replaceState(null, '', location.pathname);
 }
-const key = hosted ? null : sessionStorage.getItem('visual-waltz-key');
+const key = hosted ? null : sessionStorage.getItem('vizuil-key');
 let canvas = $('scene');
 const dialog = $('share-dialog');
 const chrome = document.querySelectorAll('.chrome');
@@ -46,7 +46,7 @@ function showScene(id) {
   sceneId = id;
   canvas.dataset.scene = id;
   canvas.setAttribute('aria-label', entry.description);
-  document.title = `Visual Waltz · ${entry.area}`;
+  document.title = `Vizuil · ${entry.area}`;
   setText($('scene-area'), `${entry.number} / ${entry.area}`);
   setText($('scene-number'), `VISUAL ${entry.number}`);
   setText($('scene-name'), entry.name);
@@ -221,7 +221,7 @@ function disconnected() {
   $('dot').classList.remove('active');
   updateSourceButtons('off');
   if (viewer) message('Waiting for the PC. If sharing ended, scan a new code.');
-  else showError($('error'), 'Waiting for the launcher. If it closed, open Visual Waltz from Windows.');
+  else showError($('error'), 'Waiting for the launcher. If it closed, open Vizuil from Windows.');
 }
 
 if (hosted) {
@@ -241,7 +241,7 @@ if (hosted) {
       ? `${choice.instructions} If Entire Screen is missing, use a regular Chrome or Edge window.`
       : choice.instructions;
     setText($('capture-instructions'), siteAudio.canCapture
-      ? instructions : 'Open Visual Waltz in desktop Chrome or Edge to share audio.');
+      ? instructions : 'Open Vizuil in desktop Chrome or Edge to share audio.');
     open.hidden = window.top === window && siteAudio.canCapture;
   }
   captureInput.addEventListener('change', () => {
@@ -257,7 +257,7 @@ if (hosted) {
   connection.addEventListener('open', () => showError($('error'), ''));
 } else {
   setText($('status'), 'Launcher needed');
-  showError($('error'), 'Open Visual Waltz from its Windows system tray icon.');
+  showError($('error'), 'Open Vizuil from its Windows system tray icon.');
 }
 updateSourceButtons('off');
 

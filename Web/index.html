@@ -4,20 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#10172a">
-  <title>Visual Waltz · Ion Gorge</title>
+  <title>Vizuil · Ion Gorge</title>
   <meta name="description" content="Music visualizer scenes that react to your spectrum and rhythm.">
   <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/style.css">
   <script type="module" src="/assets/app.mjs"></script>
 </head>
 <body>
-  <main id="stage" aria-label="Visual Waltz music visualizer">
+  <main id="stage" aria-label="Vizuil music visualizer">
     <canvas id="scene" aria-label="A pixel-art plane weaves through volleys in a canyon at dusk"></canvas>
     <div class="glass" aria-hidden="true"></div>
     <header class="chrome top">
       <div class="identity">
         <img src="/assets/mark.svg" alt="" width="39" height="39">
-        <div><h1>Visual Waltz</h1><p id="scene-area">01 / Ion Gorge</p></div>
+        <div><h1>Vizuil</h1><p id="scene-area">01 / Ion Gorge</p></div>
       </div>
       <div class="telemetry">
         <div class="readout"><span class="dot" id="dot"></span><span id="status" role="status">Connecting</span></div>
@@ -63,10 +63,10 @@
       <button id="start-share" type="button">Start Sharing</button>
     </div>
     <div id="share-active" hidden>
-      <img id="qr" alt="Scan to open Visual Waltz on your phone" width="168" height="168">
+      <img id="qr" alt="Scan to open Vizuil on your phone" width="168" height="168">
       <div class="copy-row"><input id="viewer-link" aria-label="Phone viewer link" readonly><button id="copy-link" type="button" class="secondary">Copy</button></div>
       <button id="stop-share" type="button" class="secondary">Stop Sharing</button>
-      <p class="micro">If Windows asks, allow Visual Waltz on private networks.</p>
+      <p class="micro">If Windows asks, allow Vizuil on private networks.</p>
     </div>
     <p id="share-error" class="error" role="alert" hidden></p>
   </dialog>

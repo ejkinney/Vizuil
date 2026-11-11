@@ -289,7 +289,7 @@ async function main() {
     await desktop.goto(url);
     const status = () => desktop.locator('#status').textContent();
     await waitFor(async () => await status() === 'Ready', 'Desktop did not connect');
-    if (process.env.VISUAL_WALTZ_SOAK_ONLY === '1') { await soak(desktop, status, errors); return; }
+    if (process.env.VIZUIL_SOAK_ONLY === '1') { await soak(desktop, status, errors); return; }
     await checkBeatStackMotion(desktop);
     await checkCarrierBeacon(desktop);
     await desktop.screenshot({ path: path.join(evidence, 'desktop-controls.png') });
@@ -336,7 +336,7 @@ async function main() {
     assert.equal((await fetch(`${viewerOrigin}/api/source`, { method: 'POST', headers: { Authorization: `Bearer ${key}` } })).status, 404);
     assert.equal((await fetch(`${viewerOrigin}/v/wrong`)).status, 404);
 
-    if (process.env.VISUAL_WALTZ_PHONE_ENGINE === 'webkit') phoneBrowser = await webkit.launch();
+    if (process.env.VIZUIL_PHONE_ENGINE === 'webkit') phoneBrowser = await webkit.launch();
     const mobile = await (phoneBrowser ?? browser).newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const phone = await mobile.newPage();
     phone.on('pageerror', error => errors.push(error.message));
@@ -427,7 +427,7 @@ async function main() {
     await waitFor(async () => await desktop.locator('#scene-name').textContent() === 'Bullet Hell', 'Could not return to Bullet Hell');
     assert.deepEqual(errors, []);
     console.log('Pyramid steps, every-beat bounces, fourth-beat swaps, spectrum history, fullscreen, phone layout, and sharing passed.');
-    if (process.env.VISUAL_WALTZ_PHONE_ONLY === '1') return;
+    if (process.env.VIZUIL_PHONE_ONLY === '1') return;
 
     await desktop.mouse.move(260, 300);
     let latest;
