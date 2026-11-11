@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyTitle>Visual Waltz</AssemblyTitle>
+    <ApplicationIcon>visual-waltz.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="NAudio.Wasapi" Version="3.3.0" />
+    <PackageReference Include="QRCoder" Version="1.7.0" />
+    <EmbeddedResource Include="Web\*" LogicalName="web/%(Filename)%(Extension)" />
+    <Compile Remove="tests\**\*.cs" />
+    <InternalsVisibleTo Include="VisualWaltz.Checks" />
+  </ItemGroup>
+</Project>

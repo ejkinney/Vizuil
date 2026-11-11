@@ -1,0 +1,80 @@
+import assert from 'node:assert/strict';
+import { AquariumSignal } from '../Web/aquarium.mjs';
+
+const tank = new AquariumSignal();
+const frame = { generation: 1, status: 'live', spectrum: { bpm: null, hits: [42, 0, 22], bands: Array(32).fill(0) } };
+const advance = (seconds, signal = frame) => {
+  for (let i = 0; i < Math.round(seconds * 60); i++) tank.advance(1 / 60, signal);
+};
+
+tank.advance(1 / 60, frame);
+assert.equal(tank.pulse, 0, 'Existing hit counts should not trigger a beat on entry');
+assert.equal(tank.shimmer, 0);
+frame.spectrum.bands[0] = 0.8;
+frame.spectrum.bands[31] = 0.96;
+frame.spectrum.hits = [43, 0, 23];
+tank.advance(1 / 60, frame);
+assert.equal(tank.pulse, 0, 'A kick before tempo lock should not pulse');
+assert.equal(tank.pace, 1);
+assert.equal(tank.shimmer, 1, 'Direct treble reactions should continue while tempo is unlocked');
+frame.spectrum.bpm = 90;
+frame.spectrum.bands[0] = 0.29;
+frame.spectrum.hits = [44, 0, 24];
+tank.advance(1 / 60, frame);
+assert.equal(tank.pulse, 0, 'A false bass hit from treble should not anchor the beat');
+frame.spectrum.bands[0] = 0.8;
+frame.spectrum.hits = [45, 0, 25];
+tank.advance(1 / 60, frame);
+assert.equal(tank.pulse, 1);
+assert.equal(tank.shimmer, 1);
+advance(0.24);
+assert(tank.pulse < 0.3 && tank.shimmer < 0.4, 'Repeated delivery of one frame must not repeat the hit');
+assert(tank.levels[0] > 0.65 && tank.levels[15] > 0.8);
+assert(tank.levels.slice(1, -1).every(value => value === 0), 'Frequencies should drive the corresponding kelp plants');
+
+frame.spectrum.hits = [46, 0, 25];
+tank.advance(1 / 60, frame);
+assert(tank.pulse < 0.3, 'An off-beat kick should not reset the beat clock');
+frame.spectrum.bands.fill(0);
+advance(0.3);
+assert(tank.levels[0] < 0.2 && tank.levels[15] < 0.2, 'Kelp should settle when a frequency falls silent');
+assert(tank.pulse < 0.15);
+advance(0.15);
+assert(tank.pulse > 0.7, 'The 90 BPM clock should drive a beat through a missing kick');
+assert(tank.pace < 0.85, 'A slower tempo should slow the swimmers');
+
+frame.spectrum.bpm = null;
+frame.spectrum.hits = [47, 0, 25];
+advance(0.7);
+assert.equal(tank.pulse, 0, 'Losing the lock should stop beat pulses');
+assert.equal(tank.pace, 1);
+frame.spectrum.bpm = 150;
+advance(0.32);
+assert.equal(tank.pulse, 0, 'Reacquiring should start with a fresh beat clock');
+advance(0.1);
+assert(tank.pulse > 0.7 && tank.pace > 1, 'The new tempo should drive pulses and swimming pace');
+
+advance(0.16);
+frame.spectrum.bpm = 149.7;
+frame.spectrum.bands[0] = 0.8;
+frame.spectrum.hits[0]++;
+tank.advance(1 / 60, frame);
+assert(tank.pulse < 0.4, 'Small tempo updates should keep the beat phase');
+frame.spectrum.bpm = 108;
+frame.spectrum.hits[0]++;
+tank.advance(1 / 60, frame);
+assert.equal(tank.pulse, 1, 'A confirmed tempo change should align the new clock to the next kick');
+
+frame.generation++;
+frame.spectrum.hits = [100, 100, 100];
+frame.spectrum.bands.fill(0);
+tank.advance(1 / 60, frame);
+assert.equal(tank.pulse, 0);
+assert.equal(tank.shimmer, 0);
+assert(tank.levels.every(value => value === 0), 'Changing sources should clear spectrum levels');
+frame.spectrum.bands[15] = 1;
+advance(0.2);
+assert(tank.levels[7] > 0.9);
+tank.advance(1 / 60, null);
+assert(tank.levels.every(value => value === 0));
+console.log('Aquarium: frequency placement, tempo, hit handling, and source reset passed.');

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10172a">
+  <title>Visual Waltz · Ion Gorge</title>
+  <meta name="description" content="Music visualizer scenes that react to your spectrum and rhythm.">
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+  <script type="module" src="/assets/app.mjs"></script>
+</head>
+<body>
+  <main id="stage" aria-label="Visual Waltz music visualizer">
+    <canvas id="scene" aria-label="A pixel-art plane weaves through volleys in a canyon at dusk"></canvas>
+    <div class="glass" aria-hidden="true"></div>
+    <header class="chrome top">
+      <div class="identity">
+        <img src="/assets/mark.svg" alt="" width="39" height="39">
+        <div><h1>Visual Waltz</h1><p id="scene-area">01 / Ion Gorge</p></div>
+      </div>
+      <div class="telemetry">
+        <div class="readout"><span class="dot" id="dot"></span><span id="status" role="status">Connecting</span></div>
+        <div class="readout tempo" title="Tempo locks after a steady rhythm is detected"><strong id="tempo">—</strong> BPM</div>
+        <button class="icon-button" id="fullscreen" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg>
+        </button>
+      </div>
+    </header>
+    <section class="chrome console" id="console" aria-label="Visualizer controls">
+      <div class="console-top">
+        <div class="title-block"><p class="eyebrow" id="scene-number">VISUAL 01</p><h2 id="scene-name">Bullet Hell</h2><p class="device" id="device">Windows playback</p></div>
+        <div class="spectrum-block">
+          <div class="spectrum-caption"><span>SPECTRUM / HISTORY</span><span>16 kHz → 40 Hz</span></div>
+          <canvas id="spectrum" width="160" height="32" aria-label="Recent frequency spectrum, high frequencies at the top"></canvas>
+        </div>
+      </div>
+      <div class="console-bottom">
+        <div class="sources" aria-label="Audio source">
+          <label class="picker capture-picker" id="capture-picker" for="capture-source" hidden><span>AUDIO SOURCE</span><select id="capture-source" aria-describedby="capture-instructions"></select></label>
+          <button type="button" id="listen" disabled>Start Listening</button>
+          <button type="button" id="demo" class="secondary" disabled>Demo</button>
+          <button type="button" id="stop" class="secondary" disabled>Stop</button>
+        </div>
+        <div class="tuning">
+          <label class="density" for="density"><span>DENSITY <output id="density-value">65%</output></span><input id="density" type="range" min="0" max="100" value="65"></label>
+          <label class="picker" for="picker"><span>SCENE</span><select id="picker"></select></label>
+        </div>
+        <button type="button" id="share" class="secondary share-button">Share to Phone</button>
+      </div>
+      <p id="capture-help" class="capture-help" hidden><span id="capture-instructions"></span> <a id="open-listening" target="_blank" rel="noopener" hidden>Open in a new tab</a></p>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
+    <p id="viewer-message" class="viewer-message" role="status" hidden></p>
+  </main>
+
+  <dialog id="share-dialog" aria-labelledby="share-title">
+    <div class="dialog-head"><div><p class="eyebrow">COMPANION SCREEN</p><h2 id="share-title">Share to Phone</h2></div><button id="close-share" type="button" class="icon-button" aria-label="Close sharing settings">×</button></div>
+    <p>Connect your phone to the same Wi-Fi as this PC. Scan the code to watch the selected scene react to the music playing here.</p>
+    <div id="share-setup">
+      <label for="network" class="eyebrow">LOCAL NETWORK</label>
+      <select id="network"></select>
+      <button id="start-share" type="button">Start Sharing</button>
+    </div>
+    <div id="share-active" hidden>
+      <img id="qr" alt="Scan to open Visual Waltz on your phone" width="168" height="168">
+      <div class="copy-row"><input id="viewer-link" aria-label="Phone viewer link" readonly><button id="copy-link" type="button" class="secondary">Copy</button></div>
+      <button id="stop-share" type="button" class="secondary">Stop Sharing</button>
+      <p class="micro">If Windows asks, allow Visual Waltz on private networks.</p>
+    </div>
+    <p id="share-error" class="error" role="alert" hidden></p>
+  </dialog>
+</body>
+</html>
